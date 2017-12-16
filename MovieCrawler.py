@@ -18,7 +18,10 @@ class MovieCrawler:
             os.mkdir(output_dir)
 
     def download_page(url):
-        request = urllib.request.Request(url)
+        headers = {
+            'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36'
+        }
+        request = urllib.request.Request(url, headers=headers)
         response = urllib.request.urlopen(request)
         return response.read()
 
@@ -45,13 +48,13 @@ class MovieCrawler:
         '''
         links = []
         link, name = task
-        detail_soup = BeautifulSoup(self.download_page(link), 'html.parser', from_encoding='gbk')
+        detail_soup = BeautifulSoup(MovieCrawler.download_page(link), 'html.parser', from_encoding='gbk')
         zoom = detail_soup.find('div', attrs={'id': 'Zoom'})
         for item in zoom.find_all(name=['img', 'a']):
             if item.name == 'img':
                 img_src = item['src']
                 with open(self.output_dir + img_src.split("/")[-1], 'wb') as img_w:
-                    img_w.write(self.download_page(img_src))
+                    img_w.write(MovieCrawler.download_page(img_src))
 
             if item.name == 'a':
                 links.append((item.text + "," + item['href'] + "\n"))
@@ -61,7 +64,7 @@ class MovieCrawler:
             link_file.writelines(links)
 
     def execute(self):
-        homepage = self.download_page(self.BASE_URL)
+        homepage = MovieCrawler.download_page(self.BASE_URL)
         links = self.get_links(homepage)
         for idx in range(len(links)):
             task = links[idx]
