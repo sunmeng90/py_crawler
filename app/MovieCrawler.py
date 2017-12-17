@@ -7,7 +7,6 @@ import re
 import urllib.request
 import urllib.response
 from bs4 import BeautifulSoup
-import unittest
 
 
 class MovieCrawler:
@@ -27,7 +26,7 @@ class MovieCrawler:
         response = urllib.request.urlopen(request)
         return response.read()
 
-    def get_category_idx_links(self):
+    def get_category_urls(self):
         '''
         get detail page link
         :param page:
@@ -64,24 +63,31 @@ class MovieCrawler:
             link_file.writelines(links)
 
     def execute(self):
-        self.get_category_idx_links()
+        self.get_category_urls()
         movie_links_on_categories = []
         for category in self.categories:
             category_name, category_idx_link = category
-            movie_links_on_categories += self.get_detail_links_from_category_page(category_idx_link)
-
+            all_page_url_for_category = MovieCrawler.get_all_page_urls_for_category(category_idx_link)
+            for page_url in all_page_url_for_category:
+                movie_links_on_categories += self.get_movie_page_urls_on_page(page_url)
         for idx in range(len(movie_links_on_categories)):
             movie_link = movie_links_on_categories[idx]
             print("[{current_idx}/{total}]: {name}".format(current_idx=idx + 1, total=len(movie_links_on_categories),
                                                            name=movie_link[1]))
             self.process_detail_page(movie_link)
 
-    def get_detail_links_from_category_page(self, category_url):
+    def get_movie_page_urls_on_page(self, category_url):
         soup_category_page = MovieCrawler.download_page(category_url)
         category_html = BeautifulSoup(soup_category_page, 'html.parser', from_encoding='gbk')
         movie_a_list = category_html.select('.co_content8 table tr td b a.ulink')
         return [(self.BASE_URL + a['href'], a.text) for a in movie_a_list]
 
+    def get_all_page_urls_for_category(category_idx_url):
+        soup_idx = BeautifulSoup(MovieCrawler.download_page(category_idx_url), 'html.parser',
+                                 from_encoding='utf-8')
+        page_list = soup_idx.select('select[name="sldd"] option')
+        url_base = category_idx_url[:category_idx_url.rfind('/') + 1]
+        return [url_base + page_url['value'] for page_url in page_list]
 
 
 if __name__ == '__main__':

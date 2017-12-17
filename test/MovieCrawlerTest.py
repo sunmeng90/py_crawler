@@ -24,7 +24,7 @@ class MovieCrawlerTest(unittest.TestCase):
         pass
 
     def test_get_detail_links_from_category_page(self):
-        movie_links = self.movie_crawler.get_detail_links_from_category_page(
+        movie_links = self.movie_crawler.get_movie_page_urls_on_page(
             "http://www.ygdy8.net/html/gndy/china/index.html");
         print(movie_links)
 
