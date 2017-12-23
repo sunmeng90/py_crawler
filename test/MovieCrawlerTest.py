@@ -4,7 +4,7 @@
 
 from mockito import mock, verify
 import os
-from app.MovieCrawler import MovieCrawler
+from app.MovieURLCrawler import MovieURLCrawler
 
 import unittest
 
@@ -13,7 +13,7 @@ class MovieCrawlerTest(unittest.TestCase):
     def setUp(self):
         url = "http://www.dytt8.net"
         output_dir = os.getcwd() + "/crawler_output/"
-        self.movie_crawler = MovieCrawler(url, output_dir)
+        self.movie_crawler = MovieURLCrawler(url, output_dir)
 
     def tearDown(self):
         pass

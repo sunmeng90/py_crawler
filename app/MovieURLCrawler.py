@@ -11,6 +11,7 @@ from queue import Queue
 import threading
 import datetime
 import pprint
+from pymongo import MongoClient
 
 
 class CrawlerUtils(object):
@@ -24,7 +25,7 @@ class CrawlerUtils(object):
         return response.read.decode(encoding) if encoding else response.read()
 
 
-class MovieCrawler:
+class MovieURLCrawler:
 
     def __init__(self, url):
         self.BASE_URL = url
@@ -39,7 +40,7 @@ class MovieCrawler:
         home_html = CrawlerUtils.download_page(self.BASE_URL)
         home_dom = BeautifulSoup(home_html, 'html.parser', from_encoding='gbk')
         categories = home_dom.select('.bd3rl .co_area2 .title_all')
-        for category in categories[0:4]:
+        for category in categories[0:3]:
             category_name = category.find('strong').text
             category_idx = category.find('a')['href']
             self.categories.append(
@@ -47,7 +48,7 @@ class MovieCrawler:
 
     def get_all_page_urls_for_category(category_idx_url):
         soup_idx = BeautifulSoup(CrawlerUtils.download_page(category_idx_url), 'html.parser',
-                                 from_encoding='utf-8')
+                                 from_encoding='gbk')
         page_list = soup_idx.select('select[name="sldd"] option')
         url_base = category_idx_url[:category_idx_url.rfind('/') + 1]
         return [url_base + page_url['value'] for page_url in page_list]
@@ -56,7 +57,7 @@ class MovieCrawler:
         soup_category_page = CrawlerUtils.download_page(category_url)
         category_html = BeautifulSoup(soup_category_page, 'html.parser', from_encoding='gbk')
         movie_a_list = category_html.select('.co_content8 table tr td b a.ulink')
-        return [(self.BASE_URL + a['href'], a.text) for a in movie_a_list]
+        return [{'name': a.text, 'href': self.BASE_URL + a['href']} for a in movie_a_list]
 
     def get_all_movie_urls(self):
         self.get_category_idx_urls();
@@ -64,7 +65,7 @@ class MovieCrawler:
         for category_url in self.categories:
             category_name, category_address = category_url
             print("Get page urls for category %s" % category_name)
-            category_page_urls += MovieCrawler.get_all_page_urls_for_category(category_address)
+            category_page_urls += MovieURLCrawler.get_all_page_urls_for_category(category_address)
 
         all_idx_page_urls_on_category = []
         for category_page_url in category_page_urls:
@@ -72,21 +73,22 @@ class MovieCrawler:
         return all_idx_page_urls_on_category
 
 
-class CrawlerQueue(threading.Thread):
+class MovieQueue(threading.Thread):
 
-    def __init__(self, queue, output_dir):
+    def __init__(self, queue, output_dir, mongo_collection):
         threading.Thread.__init__(self)
         self.queue = queue
         self.output_dir = output_dir
+        self.mongo_collection = mongo_collection
         self.total = queue.qsize()
 
     def run(self):
         while True:
             task = self.queue.get()
-            link, name = task
             print(str(threading.current_thread()) + ": [{remaining}/{total}] -> {name}".format(
-                remaining=self.queue.qsize(), total=self.total, name=name))
+                remaining=self.queue.qsize(), total=self.total, name=task['name']))
             self.process_detail_page(task)
+            self.mongo_collection.update({'_id': task['_id']}, {"$set": {"saved": True}})
             self.queue.task_done()
 
     def process_detail_page(self, task):
@@ -94,8 +96,7 @@ class CrawlerQueue(threading.Thread):
         :param task: link item
         '''
         links = []
-        link, name = task
-        detail_soup = BeautifulSoup(CrawlerUtils.download_page(link), 'html.parser', from_encoding='gbk')
+        detail_soup = BeautifulSoup(CrawlerUtils.download_page(task['href']), 'html.parser', from_encoding='gbk')
         zoom = detail_soup.find('div', attrs={'id': 'Zoom'})
         for item in zoom.find_all(name=['img', 'a']):
             if item.name == 'img':
@@ -106,29 +107,35 @@ class CrawlerQueue(threading.Thread):
             if item.name == 'a':
                 links.append((item.text + "," + item['href'] + "\n"))
 
-        with open(self.output_dir + re.sub('[/\\,!@#$%^&*()+]', '_', name) + '_links.txt', 'w',
+        with open(self.output_dir + re.sub('[/\\,!@#$%^&*()+]', '_', task['name']) + '_links.txt', 'w',
                   encoding="utf-8") as link_file:
             link_file.writelines(links)
 
 
-def crawler_main(url, output_dir):
-    movie_crawler = MovieCrawler(url)
-    all_movie_urls = movie_crawler.get_all_movie_urls()
-    pprint.pprint(all_movie_urls)
+def crawler_main(output_dir, mongo_collection):
+    all_movie_urls = list(movie_collection.find({'saved': {'$exists': False}}))
+    if not all_movie_urls: return
     print("Total movies: %s" % len(all_movie_urls))
     queue = Queue()
     for task in all_movie_urls:
         queue.put(task)
 
     for i in range(5):
-        t = CrawlerQueue(queue, output_dir)
+        t = MovieQueue(queue, output_dir, mongo_collection)
         # t.setDaemon(True)
         t.setName("Crawler " + str(i))
         t.start()
     queue.join()
 
 
+def save_movie_links(movies):
+    [movie_collection.save(movie) for movie in movies]
+
+
 if __name__ == '__main__':
     url = "http://www.dytt8.net"
     output_dir = os.getcwd() + "/crawler_output/"
-    crawler_main(url, output_dir)
+    conn = MongoClient('localhost', 27017)
+    movie_db = conn.movie_db
+    movie_collection = movie_db.movie_collection
+    crawler_main(output_dir, movie_collection)
